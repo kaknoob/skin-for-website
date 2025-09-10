@@ -37,7 +37,7 @@ def download_model_from_gdrive():
         # ใส่ Google Drive File ID ของคุณที่นี่
         file_id = os.getenv('1323xd6TpqZiKNdQSEmddXmZmaJZdIOm6')
         
-        if file_id == 'YOUR_GOOGLE_DRIVE_FILE_ID':
+        if file_id == '1323xd6TpqZiKNdQSEmddXmZmaJZdIOm6':
             logger.error("Please set GDRIVE_FILE_ID environment variable")
             return False
             
