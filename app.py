@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, render_template
 from flask_cors import CORS
 import cv2
 import numpy as np
@@ -6,6 +6,8 @@ from PIL import Image
 import io
 import base64
 import os
+import gdown
+import requests
 from ultralytics import YOLO
 import logging
 
@@ -20,17 +22,96 @@ logger = logging.getLogger(__name__)
 model = None
 class_names = []
 
-def load_model():
-    """Load YOLO model"""
-    global model, class_names
-    try:
-        # ใส่ path ของ model ที่เทรนแล้ว
-        model_path = os.getenv('MODEL_PATH', 'best.pt')  # ใช้ environment variable
+def download_model_from_gdrive():
+    """ดาวน์โหลด model จาก Google Drive"""
+    model_path = 'models/best.pt'
+    
+    if os.path.exists(model_path):
+        logger.info(f"Model already exists at {model_path}")
+        return True
         
-        if not os.path.exists(model_path):
-            logger.error(f"Model file not found: {model_path}")
+    try:
+        os.makedirs('models', exist_ok=True)
+        logger.info("Downloading model from Google Drive...")
+        
+        # ใส่ Google Drive File ID ของคุณที่นี่
+        file_id = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
+        
+        if file_id == 'YOUR_GOOGLE_DRIVE_FILE_ID':
+            logger.error("Please set GDRIVE_FILE_ID environment variable")
             return False
             
+        url = f"https://drive.google.com/uc?id={file_id}"
+        
+        # ใช้ gdown ดาวน์โหลด
+        gdown.download(url, model_path, quiet=False)
+        logger.info("Model downloaded successfully!")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error downloading model from Google Drive: {str(e)}")
+        return False
+
+def download_model_from_url():
+    """ดาวน์โหลด model จาก URL"""
+    model_path = 'models/best.pt'
+    
+    if os.path.exists(model_path):
+        logger.info(f"Model already exists at {model_path}")
+        return True
+        
+    try:
+        os.makedirs('models', exist_ok=True)
+        
+        # รับ URL จาก environment variable
+        model_url = os.getenv('MODEL_URL')
+        
+        if not model_url:
+            logger.error("MODEL_URL environment variable not set")
+            return False
+            
+        logger.info(f"Downloading model from URL: {model_url}")
+        
+        response = requests.get(model_url, stream=True)
+        response.raise_for_status()
+        
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+        
+        with open(model_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        progress = (downloaded / total_size) * 100
+                        print(f"\rProgress: {progress:.1f}%", end='')
+        
+        print()  # New line
+        logger.info("Model downloaded successfully!")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error downloading model from URL: {str(e)}")
+        return False
+
+def load_model():
+    """Load YOLO model with auto-download"""
+    global model, class_names
+    
+    try:
+        model_path = 'models/best.pt'
+        
+        # ลองดาวน์โหลดจาก Google Drive ก่อน
+        if not os.path.exists(model_path):
+            if not download_model_from_gdrive():
+                # ถ้าไม่ได้ ลองจาก URL
+                if not download_model_from_url():
+                    logger.error("Failed to download model from all sources")
+                    return False
+        
+        # Load model
+        logger.info(f"Loading model from {model_path}")
         model = YOLO(model_path)
         class_names = model.names
         logger.info(f"Model loaded successfully. Classes: {class_names}")
@@ -67,7 +148,8 @@ def process_image(image_data):
                     class_id = int(box.cls[0].cpu().numpy())
                     
                     # Filter by confidence threshold
-                    if confidence > 0.5:  # สามารถปรับได้
+                    confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
+                    if confidence > confidence_threshold:
                         class_name = class_names.get(class_id, f"Class_{class_id}")
                         
                         # Add to detections list
@@ -100,7 +182,7 @@ def process_image(image_data):
         logger.error(f"Error processing image: {str(e)}")
         return {'success': False, 'error': str(e)}
 
-# HTML Template
+# HTML Template (same as before)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="th">
@@ -209,11 +291,33 @@ HTML_TEMPLATE = """
             border-radius: 5px;
             margin: 10px 0;
         }
+        .model-status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .model-loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .model-ready {
+            background: #d4edda;
+            color: #155724;
+        }
+        .model-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔍 YOLO Object Detection</h1>
+        
+        <div id="modelStatus" class="model-status model-loading">
+            ⏳ กำลังโหลด Model... กรุณารอสักครู่
+        </div>
         
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <p>📁 คลิกหรือลากไฟล์รูปภาพมาที่นี่</p>
@@ -252,6 +356,28 @@ HTML_TEMPLATE = """
         const processBtn = document.getElementById('processBtn');
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
+        const modelStatus = document.getElementById('modelStatus');
+
+        // Check model status on load
+        checkModelStatus();
+
+        function checkModelStatus() {
+            fetch('/health')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.model_loaded) {
+                        modelStatus.className = 'model-status model-ready';
+                        modelStatus.innerHTML = '✅ Model พร้อมใช้งาน - คลาส: ' + Object.values(data.classes).join(', ');
+                    } else {
+                        modelStatus.className = 'model-status model-error';
+                        modelStatus.innerHTML = '❌ Model ยังไม่พร้อม - กรุณาตรวจสอบ logs';
+                    }
+                })
+                .catch(error => {
+                    modelStatus.className = 'model-status model-error';
+                    modelStatus.innerHTML = '❌ ไม่สามารถเชื่อมต่อ Backend ได้';
+                });
+        }
 
         // File input change event
         fileInput.addEventListener('change', function(e) {
@@ -359,6 +485,9 @@ HTML_TEMPLATE = """
                 reader.onerror = error => reject(error);
             });
         }
+
+        // Refresh model status every 30 seconds
+        setInterval(checkModelStatus, 30000);
     </script>
 </body>
 </html>
@@ -366,7 +495,13 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    # ใช้ไฟล์ HTML แยกต่างหาก หรือใช้ template string
+    try:
+        # ถ้ามีไฟล์ templates/index.html
+        return render_template('index.html')
+    except:
+        # ถ้าไม่มี ใช้ template string
+        return render_template_string(HTML_TEMPLATE)
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -378,7 +513,7 @@ def predict():
             return jsonify({'success': False, 'error': 'No image provided'})
         
         if model is None:
-            return jsonify({'success': False, 'error': 'Model not loaded'})
+            return jsonify({'success': False, 'error': 'Model not loaded yet. Please wait or check logs.'})
         
         result = process_image(data['image'])
         return jsonify(result)
@@ -393,14 +528,41 @@ def health():
     return jsonify({
         'status': 'healthy',
         'model_loaded': model is not None,
-        'classes': class_names if class_names else []
+        'classes': class_names if class_names else {},
+        'model_path': 'models/best.pt' if os.path.exists('models/best.pt') else None
     })
+
+@app.route('/download-model', methods=['POST'])
+def force_download_model():
+    """Force re-download model"""
+    try:
+        global model, class_names
+        
+        # Remove existing model
+        if os.path.exists('models/best.pt'):
+            os.remove('models/best.pt')
+        
+        # Clear global variables
+        model = None
+        class_names = []
+        
+        # Try to download again
+        if load_model():
+            return jsonify({'success': True, 'message': 'Model downloaded and loaded successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to download model'})
+            
+    except Exception as e:
+        logger.error(f"Error in force download: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     # Load model on startup
+    logger.info("Starting Flask app...")
     if load_model():
-        logger.info("Starting Flask app...")
-        port = int(os.environ.get('PORT', 8080))
-        app.run(host='0.0.0.0', port=port, debug=False)
+        logger.info("Model loaded successfully. Starting server...")
     else:
-        logger.error("Failed to load model. Exiting...")
+        logger.warning("Model loading failed. Server will start but predictions won't work until model is loaded.")
+    
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
