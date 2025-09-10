@@ -35,13 +35,13 @@ def download_model_from_gdrive():
         logger.info("Downloading model from Google Drive...")
         
         # ใส่ Google Drive File ID ของคุณที่นี่
-        file_id = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
+        file_id = os.getenv('1323xd6TpqZiKNdQSEmddXmZmaJZdIOm6')
         
         if file_id == 'YOUR_GOOGLE_DRIVE_FILE_ID':
             logger.error("Please set GDRIVE_FILE_ID environment variable")
             return False
             
-        url = f"https://drive.google.com/uc?id={file_id}"
+        url = f"https://drive.google.com/file/d/1323xd6TpqZiKNdQSEmddXmZmaJZdIOm6/view?usp=sharing"
         
         # ใช้ gdown ดาวน์โหลด
         gdown.download(url, model_path, quiet=False)
