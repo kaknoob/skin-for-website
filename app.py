@@ -10,6 +10,7 @@ import gdown
 import requests
 from ultralytics import YOLO
 import logging
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -22,8 +23,22 @@ logger = logging.getLogger(__name__)
 model = None
 class_names = []
 
+def extract_file_id_from_url(url):
+    """แยก file ID จาก Google Drive URL หลายรูปแบบ"""
+    patterns = [
+        r'/file/d/([a-zA-Z0-9-_]+)',
+        r'id=([a-zA-Z0-9-_]+)',
+        r'/d/([a-zA-Z0-9-_]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
 def download_model_from_gdrive():
-    """ดาวน์โหลด model จาก Google Drive with multiple methods"""
+    """ดาวน์โหลด model จาก Google Drive with multiple methods - ปรับปรุงแล้ว"""
     model_path = 'models/best.pt'
     
     if os.path.exists(model_path):
@@ -34,11 +49,22 @@ def download_model_from_gdrive():
         os.makedirs('models', exist_ok=True)
         logger.info("Downloading model from Google Drive...")
         
-        file_id = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
+        # รับ file ID จาก environment variable
+        gdrive_input = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
         
-        if file_id == 'YOUR_GOOGLE_DRIVE_FILE_ID':
+        if gdrive_input == 'YOUR_GOOGLE_DRIVE_FILE_ID':
             logger.error("Please set GDRIVE_FILE_ID environment variable")
             return False
+        
+        # ถ้าเป็น URL เต็ม ให้แยก file ID ออกมา
+        if gdrive_input.startswith('http'):
+            file_id = extract_file_id_from_url(gdrive_input)
+            if not file_id:
+                logger.error(f"Cannot extract file ID from URL: {gdrive_input}")
+                return False
+            logger.info(f"Extracted file ID: {file_id}")
+        else:
+            file_id = gdrive_input
             
         # ลองหลายวิธี
         download_methods = [
@@ -46,7 +72,7 @@ def download_model_from_gdrive():
             lambda: gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False, fuzzy=True),
             # Method 2: gdown with direct download
             lambda: gdown.download(f"https://drive.google.com/uc?export=download&id={file_id}", model_path, quiet=False),
-            # Method 3: requests
+            # Method 3: requests with session handling
             lambda: download_with_requests(file_id, model_path),
         ]
         
@@ -56,9 +82,16 @@ def download_model_from_gdrive():
                 method()
                 
                 # ตรวจสอบว่าไฟล์ถูกดาวน์โหลดจริง
-                if os.path.exists(model_path) and os.path.getsize(model_path) > 10000:  # อย่างน้อย 10KB
+                if os.path.exists(model_path) and os.path.getsize(model_path) > 100000:  # อย่างน้อย 100KB
                     logger.info(f"Method {i} successful! File size: {os.path.getsize(model_path)} bytes")
-                    return True
+                    
+                    # ตรวจสอบว่าไฟล์เป็น PyTorch model จริงหรือไม่
+                    if is_valid_pytorch_model(model_path):
+                        logger.info("Valid PyTorch model detected!")
+                        return True
+                    else:
+                        logger.warning(f"Downloaded file is not a valid PyTorch model")
+                        os.remove(model_path)
                 else:
                     logger.warning(f"Method {i} failed - file not created or too small")
                     if os.path.exists(model_path):
@@ -77,36 +110,90 @@ def download_model_from_gdrive():
         logger.error(f"Error downloading model from Google Drive: {str(e)}")
         return False
 
+def is_valid_pytorch_model(file_path):
+    """ตรวจสอบว่าไฟล์เป็น PyTorch model จริงหรือไม่"""
+    try:
+        # อ่านไบต์แรกของไฟล์
+        with open(file_path, 'rb') as f:
+            header = f.read(10)
+        
+        # PyTorch model จะขึ้นต้นด้วย PK (ZIP format) หรือ magic bytes อื่นๆ
+        # HTML file จะขึ้นต้นด้วย < หรือ <!
+        if header.startswith(b'<') or header.startswith(b'<!'):
+            logger.error("File appears to be HTML, not a PyTorch model")
+            return False
+            
+        # ตรวจสอบขนาดไฟล์ (PyTorch model ปกติจะมีขนาดใหญ่กว่า 1MB)
+        file_size = os.path.getsize(file_path)
+        if file_size < 1000000:  # น้อยกว่า 1MB
+            logger.warning(f"File size ({file_size} bytes) seems too small for a YOLO model")
+            return False
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error validating model file: {str(e)}")
+        return False
+
 def download_with_requests(file_id, output_path):
-    """ดาวน์โหลดด้วย requests library"""
+    """ดาวน์โหลดด้วย requests library - ปรับปรุงแล้ว"""
     import requests
     
-    # ลอง URL หลายแบบ
+    # URL สำหรับดาวน์โหลดจาก Google Drive
     urls = [
+        f"https://drive.google.com/uc?export=download&id={file_id}&confirm=1",
+        f"https://drive.google.com/uc?id={file_id}&export=download&confirm=1",
         f"https://drive.google.com/uc?export=download&id={file_id}",
-        f"https://drive.google.com/uc?id={file_id}&export=download",
     ]
+    
+    session = requests.Session()
     
     for url in urls:
         try:
             logger.info(f"Trying requests with URL: {url}")
             
-            session = requests.Session()
-            response = session.get(url, stream=True)
+            # ดาวน์โหลดครั้งแรก
+            response = session.get(url, stream=True, allow_redirects=True)
             
-            # จัดการ Google Drive warning page
-            if "virus scan warning" in response.text.lower():
-                # หา download link ใน warning page
-                for line in response.text.split('\n'):
-                    if 'confirm=' in line and 'export=download' in line:
-                        import re
-                        match = re.search(r'href="([^"]*export=download[^"]*)"', line)
-                        if match:
-                            new_url = match.group(1).replace('&amp;', '&')
-                            response = session.get('https://drive.google.com' + new_url, stream=True)
-                            break
+            # ตรวจสอบว่าเป็น virus scan warning page หรือไม่
+            if response.headers.get('content-type', '').startswith('text/html'):
+                content_preview = response.content[:1000].decode('utf-8', errors='ignore')
+                
+                # ถ้าเจอ warning page ให้หา download link
+                if 'virus scan warning' in content_preview.lower() or 'download anyway' in content_preview.lower():
+                    logger.info("Detected virus scan warning page, looking for download link...")
+                    
+                    # หา download link ในหน้า HTML
+                    download_link_patterns = [
+                        r'href="([^"]*&amp;confirm=[^"]*)"',
+                        r'href="([^"]*confirm=[^"]*)"',
+                        r"href='([^']*confirm=[^']*)'",
+                    ]
+                    
+                    for pattern in download_link_patterns:
+                        matches = re.findall(pattern, content_preview)
+                        for match in matches:
+                            if 'export=download' in match:
+                                # แปลง &amp; เป็น &
+                                clean_url = match.replace('&amp;', '&')
+                                if not clean_url.startswith('http'):
+                                    clean_url = 'https://drive.google.com' + clean_url
+                                
+                                logger.info(f"Found download link: {clean_url}")
+                                response = session.get(clean_url, stream=True, allow_redirects=True)
+                                break
+                    else:
+                        continue  # ไม่เจอ link ให้ลอง URL ถัดไป
             
+            # ตรวจสอบ response
             if response.status_code == 200:
+                # ตรวจสอบ content type
+                content_type = response.headers.get('content-type', '')
+                if content_type.startswith('text/html'):
+                    logger.warning(f"Received HTML content instead of binary file")
+                    continue
+                
+                # ดาวน์โหลดไฟล์
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
                 
@@ -120,10 +207,17 @@ def download_with_requests(file_id, output_path):
                                 print(f"\rDownloading: {progress:.1f}%", end='', flush=True)
                 
                 print()  # New line
-                return True
                 
+                # ตรวจสอบขนาดไฟล์
+                if os.path.getsize(output_path) > 100000:  # มากกว่า 100KB
+                    logger.info(f"Successfully downloaded {downloaded} bytes")
+                    return True
+                else:
+                    logger.warning("Downloaded file too small")
+                    os.remove(output_path)
+                    
         except Exception as e:
-            logger.warning(f"Requests method failed: {str(e)}")
+            logger.warning(f"Requests method failed with URL {url}: {str(e)}")
             continue
             
     return False
@@ -148,6 +242,13 @@ def download_model_from_url():
             
         logger.info(f"Downloading model from URL: {model_url}")
         
+        # ถ้า URL เป็น Google Drive link ให้แปลงเป็น direct download
+        if 'drive.google.com' in model_url:
+            file_id = extract_file_id_from_url(model_url)
+            if file_id:
+                model_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=1"
+                logger.info(f"Converted to direct download URL: {model_url}")
+        
         response = requests.get(model_url, stream=True, allow_redirects=True)
         response.raise_for_status()
         
@@ -166,11 +267,13 @@ def download_model_from_url():
         print()  # New line
         
         # ตรวจสอบว่าไฟล์ดาวน์โหลดสำเร็จ
-        if os.path.exists(model_path) and os.path.getsize(model_path) > 10000:
+        if os.path.exists(model_path) and os.path.getsize(model_path) > 100000 and is_valid_pytorch_model(model_path):
             logger.info("Model downloaded successfully from URL!")
             return True
         else:
-            logger.error("Downloaded file is too small or doesn't exist")
+            logger.error("Downloaded file is invalid or too small")
+            if os.path.exists(model_path):
+                os.remove(model_path)
             return False
         
     except Exception as e:
@@ -207,8 +310,8 @@ def load_model():
         file_size = os.path.getsize(model_path)
         logger.info(f"Model file found: {model_path} (size: {file_size} bytes)")
         
-        if file_size < 1000:  # น้อยกว่า 1KB คงจะไม่ใช่ไฟล์โมเดลจริง
-            logger.error("Model file too small, likely corrupted or not a valid model")
+        if not is_valid_pytorch_model(model_path):
+            logger.error("Model file validation failed")
             return False
         
         # Load model
