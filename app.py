@@ -21,9 +21,8 @@ logger = logging.getLogger(__name__)
 # Global variables
 model = None
 class_names = []
-
 def download_model_from_gdrive():
-    """ดาวน์โหลด model จาก Google Drive"""
+    """ดาวน์โหลด model จาก Google Drive with multiple methods"""
     model_path = 'models/best.pt'
     
     if os.path.exists(model_path):
@@ -34,26 +33,102 @@ def download_model_from_gdrive():
         os.makedirs('models', exist_ok=True)
         logger.info("Downloading model from Google Drive...")
         
-        # ใส่ Google Drive File ID ของคุณที่นี่
         file_id = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
         
         if file_id == 'YOUR_GOOGLE_DRIVE_FILE_ID':
             logger.error("Please set GDRIVE_FILE_ID environment variable")
             return False
             
-        url = f"https://drive.google.com/uc?id={file_id}"
+        # ลองหลายวิธี
+        download_methods = [
+            # Method 1: gdown with fuzzy matching
+            lambda: gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False, fuzzy=True),
+            # Method 2: gdown with direct download
+            lambda: gdown.download(f"https://drive.google.com/uc?export=download&id={file_id}", model_path, quiet=False),
+            # Method 3: requests
+            lambda: download_with_requests(file_id, model_path),
+        ]
         
-        # ใช้ gdown ดาวน์โหลด
-        gdown.download(url, model_path, quiet=False)
-        logger.info("Model downloaded successfully!")
-        return True
+        for i, method in enumerate(download_methods, 1):
+            try:
+                logger.info(f"Trying download method {i}...")
+                method()
+                
+                # ตรวจสอบว่าไฟล์ถูกดาวน์โหลดจริง
+                if os.path.exists(model_path) and os.path.getsize(model_path) > 10000:  # อย่างน้อย 10KB
+                    logger.info(f"Method {i} successful! File size: {os.path.getsize(model_path)} bytes")
+                    return True
+                else:
+                    logger.warning(f"Method {i} failed - file not created or too small")
+                    if os.path.exists(model_path):
+                        os.remove(model_path)
+                        
+            except Exception as e:
+                logger.warning(f"Method {i} failed: {str(e)}")
+                if os.path.exists(model_path):
+                    os.remove(model_path)
+                continue
+        
+        logger.error("All download methods failed")
+        return False
         
     except Exception as e:
         logger.error(f"Error downloading model from Google Drive: {str(e)}")
         return False
 
+def download_with_requests(file_id, output_path):
+    """ดาวน์โหลดด้วย requests library"""
+    import requests
+    
+    # ลอง URL หลายแบบ
+    urls = [
+        f"https://drive.google.com/uc?export=download&id={file_id}",
+        f"https://drive.google.com/uc?id={file_id}&export=download",
+    ]
+    
+    for url in urls:
+        try:
+            logger.info(f"Trying requests with URL: {url}")
+            
+            session = requests.Session()
+            response = session.get(url, stream=True)
+            
+            # จัดการ Google Drive warning page
+            if "virus scan warning" in response.text.lower():
+                # หา download link ใน warning page
+                for line in response.text.split('\n'):
+                    if 'confirm=' in line and 'export=download' in line:
+                        import re
+                        match = re.search(r'href="([^"]*export=download[^"]*)"', line)
+                        if match:
+                            new_url = match.group(1).replace('&amp;', '&')
+                            response = session.get('https://drive.google.com' + new_url, stream=True)
+                            break
+            
+            if response.status_code == 200:
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                progress = (downloaded / total_size) * 100
+                                print(f"\rDownloading: {progress:.1f}%", end='', flush=True)
+                
+                print()  # New line
+                return True
+                
+        except Exception as e:
+            logger.warning(f"Requests method failed: {str(e)}")
+            continue
+            
+    return False
+
 def download_model_from_url():
-    """ดาวน์โหลด model จาก URL"""
+    """ดาวน์โหลด model จาก URL (ปรับปรุงแล้ว)"""
     model_path = 'models/best.pt'
     
     if os.path.exists(model_path):
@@ -67,12 +142,12 @@ def download_model_from_url():
         model_url = os.getenv('MODEL_URL')
         
         if not model_url:
-            logger.error("MODEL_URL environment variable not set")
+            logger.info("MODEL_URL environment variable not set, skipping URL download")
             return False
             
         logger.info(f"Downloading model from URL: {model_url}")
         
-        response = requests.get(model_url, stream=True)
+        response = requests.get(model_url, stream=True, allow_redirects=True)
         response.raise_for_status()
         
         total_size = int(response.headers.get('content-length', 0))
@@ -85,40 +160,20 @@ def download_model_from_url():
                     downloaded += len(chunk)
                     if total_size > 0:
                         progress = (downloaded / total_size) * 100
-                        print(f"\rProgress: {progress:.1f}%", end='')
+                        print(f"\rProgress: {progress:.1f}%", end='', flush=True)
         
         print()  # New line
-        logger.info("Model downloaded successfully!")
-        return True
+        
+        # ตรวจสอบว่าไฟล์ดาวน์โหลดสำเร็จ
+        if os.path.exists(model_path) and os.path.getsize(model_path) > 10000:
+            logger.info("Model downloaded successfully from URL!")
+            return True
+        else:
+            logger.error("Downloaded file is too small or doesn't exist")
+            return False
         
     except Exception as e:
         logger.error(f"Error downloading model from URL: {str(e)}")
-        return False
-
-def load_model():
-    """Load YOLO model with auto-download"""
-    global model, class_names
-    
-    try:
-        model_path = 'models/best.pt'
-        
-        # ลองดาวน์โหลดจาก Google Drive ก่อน
-        if not os.path.exists(model_path):
-            if not download_model_from_gdrive():
-                # ถ้าไม่ได้ ลองจาก URL
-                if not download_model_from_url():
-                    logger.error("Failed to download model from all sources")
-                    return False
-        
-        # Load model
-        logger.info(f"Loading model from {model_path}")
-        model = YOLO(model_path)
-        class_names = model.names
-        logger.info(f"Model loaded successfully. Classes: {class_names}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
         return False
 
 def process_image(image_data):
