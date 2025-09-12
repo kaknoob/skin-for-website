@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Global variables
 model = None
 class_names = []
+
 def download_model_from_gdrive():
     """ดาวน์โหลด model จาก Google Drive with multiple methods"""
     model_path = 'models/best.pt'
@@ -174,6 +175,51 @@ def download_model_from_url():
         
     except Exception as e:
         logger.error(f"Error downloading model from URL: {str(e)}")
+        return False
+
+def load_model():
+    """Load YOLO model with enhanced error handling"""
+    global model, class_names
+    
+    try:
+        model_path = 'models/best.pt'
+        
+        # แสดงสถานะ environment variables
+        gdrive_id = os.getenv('GDRIVE_FILE_ID', 'NOT_SET')
+        model_url = os.getenv('MODEL_URL', 'NOT_SET')
+        logger.info(f"GDRIVE_FILE_ID: {'SET' if gdrive_id != 'NOT_SET' else 'NOT_SET'}")
+        logger.info(f"MODEL_URL: {'SET' if model_url != 'NOT_SET' else 'NOT_SET'}")
+        
+        # ลองดาวน์โหลดจาก Google Drive ก่อน
+        if not os.path.exists(model_path):
+            logger.info("Model file not found, attempting download...")
+            if not download_model_from_gdrive():
+                logger.info("Google Drive download failed, trying URL method...")
+                if not download_model_from_url():
+                    logger.error("Failed to download model from all sources")
+                    return False
+        
+        # ตรวจสอบไฟล์ก่อน load
+        if not os.path.exists(model_path):
+            logger.error(f"Model file still not found at {model_path}")
+            return False
+            
+        file_size = os.path.getsize(model_path)
+        logger.info(f"Model file found: {model_path} (size: {file_size} bytes)")
+        
+        if file_size < 1000:  # น้อยกว่า 1KB คงจะไม่ใช่ไฟล์โมเดลจริง
+            logger.error("Model file too small, likely corrupted or not a valid model")
+            return False
+        
+        # Load model
+        logger.info(f"Loading model from {model_path}")
+        model = YOLO(model_path)
+        class_names = model.names
+        logger.info(f"Model loaded successfully. Classes: {class_names}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error loading model: {str(e)}")
         return False
 
 def process_image(image_data):
