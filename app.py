@@ -352,8 +352,6 @@ def process_image(image_data):
         logger.error(f"Error processing image: {str(e)}")
         return {'success': False, 'error': str(e)}
 
-# HTML Template (same as before)
-HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -538,19 +536,19 @@ HTML_TEMPLATE = """
                     if (data.model_loaded) {
                         modelStatus.className = 'model-status model-ready';
                         modelStatus.innerHTML = '✅ Model พร้อมใช้งาน - คลาส: ' + Object.values(data.classes).join(', ');
+                        processBtn.disabled = false;
                     } else {
                         modelStatus.className = 'model-status model-error';
                         modelStatus.innerHTML = '❌ Model ยังไม่พร้อม - กรุณาตรวจสอบ logs';
                     }
                 })
-                .catch(error => {
+                .catch(() => {
                     modelStatus.className = 'model-status model-error';
                     modelStatus.innerHTML = '❌ ไม่สามารถเชื่อมต่อ Backend ได้';
                 });
         }
 
-        // File input change event
-        fileInput.addEventListener('change', function(e) {
+        fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 selectedFile = e.target.files[0];
                 uploadArea.innerHTML = `<p>✅ เลือกไฟล์: ${selectedFile.name}</p>`;
@@ -558,21 +556,19 @@ HTML_TEMPLATE = """
             }
         });
 
-        // Drag and drop events
-        uploadArea.addEventListener('dragover', function(e) {
+        uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragover');
         });
 
-        uploadArea.addEventListener('dragleave', function(e) {
+        uploadArea.addEventListener('dragleave', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
         });
 
-        uploadArea.addEventListener('drop', function(e) {
+        uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
-            
             if (e.dataTransfer.files.length > 0) {
                 selectedFile = e.dataTransfer.files[0];
                 fileInput.files = e.dataTransfer.files;
@@ -583,34 +579,21 @@ HTML_TEMPLATE = """
 
         async function processImage() {
             if (!selectedFile) return;
-
-            // Show loading
             loading.style.display = 'block';
             results.style.display = 'none';
             processBtn.disabled = true;
 
             try {
-                // Convert file to base64
                 const base64 = await fileToBase64(selectedFile);
-                
-                // Send to server
                 const response = await fetch('/predict', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        image: base64
-                    })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({image: base64})
                 });
 
                 const result = await response.json();
-                
-                if (result.success) {
-                    displayResults(result, base64);
-                } else {
-                    showError('เกิดข้อผิดพลาด: ' + result.error);
-                }
+                if (result.success) displayResults(result, base64);
+                else showError('เกิดข้อผิดพลาด: ' + result.error);
             } catch (error) {
                 showError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' + error.message);
             } finally {
@@ -620,24 +603,25 @@ HTML_TEMPLATE = """
         }
 
         function displayResults(result, originalImageB64) {
-            // Show images
-            document.getElementById('originalImage').src = originalImageB64;
-            document.getElementById('annotatedImage').src = result.annotated_image;
-            
-            // Show detection info
+            if (!originalImageB64.startsWith('data:image')) {
+                originalImageB64 = `data:image/png;base64,${originalImageB64}`;
+            }
+
+            const originalImg = document.getElementById('originalImage');
+            const annotatedImg = document.getElementById('annotatedImage');
+            if (originalImg) originalImg.src = originalImageB64;
+            if (annotatedImg) annotatedImg.src = result.annotated_image;
+
             let infoHtml = `<h4>🎯 พบวัตถุ ${result.total_detections} ชิ้น</h4>`;
-            
-            result.detections.forEach((detection, index) => {
+            result.detections.forEach((detection) => {
                 infoHtml += `
                     <div class="detection-item">
                         <strong>${detection.class}</strong> 
                         (ความแม่นยำ: ${(detection.confidence * 100).toFixed(1)}%)
-                        <br>
-                        <small>ตำแหน่ง: [${detection.bbox.join(', ')}]</small>
-                    </div>
-                `;
+                        <br><small>ตำแหน่ง: [${detection.bbox.join(', ')}]</small>
+                    </div>`;
             });
-            
+
             document.getElementById('detectionInfo').innerHTML = infoHtml;
             results.style.display = 'block';
         }
@@ -652,16 +636,15 @@ HTML_TEMPLATE = """
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
+                reader.onerror = reject;
             });
         }
 
-        // Refresh model status every 30 seconds
         setInterval(checkModelStatus, 30000);
     </script>
 </body>
 </html>
-"""
+
 
 @app.route('/')
 def index():
