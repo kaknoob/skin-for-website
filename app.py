@@ -36,79 +36,45 @@ def extract_file_id_from_url(url):
         if match:
             return match.group(1)
     return None
-
-def download_model_from_gdrive():
-    """ดาวน์โหลด model จาก Google Drive with multiple methods - ปรับปรุงแล้ว"""
-    model_path = 'models/best.pt'
     
+def download_model_from_gdrive():
+    """ดาวน์โหลด model จาก Google Drive (เสถียรขึ้น)"""
+    import gdown
+
+    model_path = 'models/best.pt'
     if os.path.exists(model_path):
-        logger.info(f"Model already exists at {model_path}")
+        logger.info(f"✅ Model already exists at {model_path}")
         return True
-        
+
     try:
         os.makedirs('models', exist_ok=True)
-        logger.info("Downloading model from Google Drive...")
-        
-        # รับ file ID จาก environment variable
-        gdrive_input = os.getenv('GDRIVE_FILE_ID', 'YOUR_GOOGLE_DRIVE_FILE_ID')
-        
-        if gdrive_input == 'YOUR_GOOGLE_DRIVE_FILE_ID':
-            logger.error("Please set GDRIVE_FILE_ID environment variable")
+        gdrive_input = os.getenv('GDRIVE_FILE_ID')
+        if not gdrive_input:
+            logger.error("❌ GDRIVE_FILE_ID environment variable not set")
             return False
-        
-        # ถ้าเป็น URL เต็ม ให้แยก file ID ออกมา
-        if gdrive_input.startswith('http'):
-            file_id = extract_file_id_from_url(gdrive_input)
-            if not file_id:
-                logger.error(f"Cannot extract file ID from URL: {gdrive_input}")
-                return False
-            logger.info(f"Extracted file ID: {file_id}")
+
+        # แยก file_id จาก URL
+        file_id = extract_file_id_from_url(gdrive_input) if gdrive_input.startswith("http") else gdrive_input
+        if not file_id:
+            logger.error(f"❌ Cannot extract file ID from {gdrive_input}")
+            return False
+
+        logger.info(f"⬇️ Downloading model from Google Drive (file_id={file_id})...")
+        output = gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
+
+        if output and os.path.exists(model_path) and os.path.getsize(model_path) > 1000000:
+            logger.info(f"✅ Model downloaded successfully! Size: {os.path.getsize(model_path)} bytes")
+            return True
         else:
-            file_id = gdrive_input
-            
-        # ลองหลายวิธี
-        download_methods = [
-            # Method 1: gdown with fuzzy matching
-            lambda: gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False, fuzzy=True),
-            # Method 2: gdown with direct download
-            lambda: gdown.download(f"https://drive.google.com/uc?export=download&id={file_id}", model_path, quiet=False),
-            # Method 3: requests with session handling
-            lambda: download_with_requests(file_id, model_path),
-        ]
-        
-        for i, method in enumerate(download_methods, 1):
-            try:
-                logger.info(f"Trying download method {i}...")
-                method()
-                
-                # ตรวจสอบว่าไฟล์ถูกดาวน์โหลดจริง
-                if os.path.exists(model_path) and os.path.getsize(model_path) > 100000:  # อย่างน้อย 100KB
-                    logger.info(f"Method {i} successful! File size: {os.path.getsize(model_path)} bytes")
-                    
-                    # ตรวจสอบว่าไฟล์เป็น PyTorch model จริงหรือไม่
-                    if is_valid_pytorch_model(model_path):
-                        logger.info("Valid PyTorch model detected!")
-                        return True
-                    else:
-                        logger.warning(f"Downloaded file is not a valid PyTorch model")
-                        os.remove(model_path)
-                else:
-                    logger.warning(f"Method {i} failed - file not created or too small")
-                    if os.path.exists(model_path):
-                        os.remove(model_path)
-                        
-            except Exception as e:
-                logger.warning(f"Method {i} failed: {str(e)}")
-                if os.path.exists(model_path):
-                    os.remove(model_path)
-                continue
-        
-        logger.error("All download methods failed")
-        return False
-        
+            logger.error("❌ gdown failed or file too small.")
+            if os.path.exists(model_path):
+                os.remove(model_path)
+            return False
+
     except Exception as e:
-        logger.error(f"Error downloading model from Google Drive: {str(e)}")
+        logger.error(f"❌ Error downloading model from Google Drive: {str(e)}")
         return False
+
 
 def is_valid_pytorch_model(file_path):
     """ตรวจสอบว่าไฟล์เป็น PyTorch model จริงหรือไม่"""
