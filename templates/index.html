@@ -9,13 +9,45 @@
             font-family: Arial, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 0;
             background-color: #f5f5f5;
         }
+        /* Navbar */
+        .navbar {
+            background-color: #007bff;
+            padding: 15px 30px;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .navbar h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            transition: opacity 0.3s;
+        }
+        .nav-links a:hover {
+            opacity: 0.7;
+        }
+
         .container {
             background: white;
             border-radius: 10px;
             padding: 30px;
+            margin: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         h1 {
@@ -33,7 +65,7 @@
             transition: all 0.3s ease;
         }
         .upload-area:hover {
-            border-color: #007bff;
+            border-color: #0056b3;
             background-color: #f8f9fa;
         }
         .upload-area.dragover {
@@ -126,6 +158,17 @@
     </style>
 </head>
 <body>
+
+    <!-- 🔵 Navbar -->
+    <div class="navbar">
+        <h2>YOLO Web</h2>
+        <div class="nav-links">
+            <a href="/">หน้าแรก</a>
+            <a href="#results">ผลการตรวจจับ</a>
+            <a href="https://github.com/kaknoob/skin-for-website" target="_blank">GitHub</a>
+        </div>
+    </div>
+
     <div class="container">
         <h1>🔍 YOLO Object Detection</h1>
         
@@ -172,7 +215,6 @@
         const results = document.getElementById('results');
         const modelStatus = document.getElementById('modelStatus');
 
-        // Check model status on load
         checkModelStatus();
 
         function checkModelStatus() {
