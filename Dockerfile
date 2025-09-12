@@ -2,16 +2,15 @@ FROM python:3.9-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libglib2.0-0 \
-    libgtk-3-dev \
+    libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
@@ -21,15 +20,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create directory for model
+# Create models directory
 RUN mkdir -p models
 
 # Set environment variables
-ENV MODEL_PATH=models/best.pt
-ENV PORT=8080
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 # Expose port
 EXPOSE 8080
 
-# Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "300", "app:app"]
+# Start command
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app", "--timeout", "300", "--workers", "1"]
