@@ -1,10 +1,18 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "dockerFile"
+    "builder": "NIXPACKS"
   },
   "deploy": {
-    "restartPolicyType": "on-failure",
-    "restartPolicyMaxRetries": 10
+    "restartPolicyType": "ON_FAILURE",
+    "startCommand": "python app.py"
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "PORT": "8080",
+        "CONFIDENCE_THRESHOLD": "0.5"
+      }
+    }
   }
 }
