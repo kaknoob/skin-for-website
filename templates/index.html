@@ -13,7 +13,7 @@
             background-color: #f5f5f5;
         }
 
-        /* 🔵 Navbar */
+        /* Navbar */
         .navbar {
             background-color: #007bff;
             padding: 15px 30px;
@@ -23,14 +23,32 @@
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 1000;
+            z-index: 100;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .navbar h2 { margin: 0; font-size: 20px; }
+        .navbar h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        /* Menu links */
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            transition: opacity 0.3s;
+        }
+        .nav-links a:hover {
+            opacity: 0.7;
+        }
 
         /* Hamburger Button */
         .menu-toggle {
-            display: flex;
+            display: none;
             flex-direction: column;
             cursor: pointer;
             gap: 5px;
@@ -42,42 +60,25 @@
             border-radius: 3px;
         }
 
-        /* 🔵 Fullscreen Menu Overlay */
-        .nav-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100%;
-            width: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 9999;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .nav-overlay.active { display: flex; }
-        .overlay-content {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            text-align: center;
-        }
-        .overlay-content a {
-            color: white;
-            font-size: 24px;
-            text-decoration: none;
-            font-weight: bold;
-            transition: opacity 0.3s;
-        }
-        .overlay-content a:hover { opacity: 0.7; }
-        .close-btn {
-            position: absolute;
-            top: 30px;
-            right: 40px;
-            font-size: 40px;
-            color: white;
-            cursor: pointer;
+        /* Responsive: Hide menu & show hamburger */
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+                flex-direction: column;
+                position: absolute;
+                top: 60px;
+                right: 20px;
+                background: #007bff;
+                padding: 10px;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            }
+            .nav-links.active {
+                display: flex;
+            }
+            .menu-toggle {
+                display: flex;
+            }
         }
 
         /* Container */
@@ -94,7 +95,7 @@
             margin-bottom: 30px;
         }
 
-        /* Upload & Results styles */
+        /* Upload & Results styles (เหมือนเดิม) */
         .upload-area {
             border: 2px dashed #ccc;
             border-radius: 10px;
@@ -161,14 +162,9 @@
             <div></div>
             <div></div>
         </div>
-    </div>
-
-    <!-- 🔵 Fullscreen Menu -->
-    <div class="nav-overlay" id="navOverlay">
-        <div class="overlay-content">
-            <span class="close-btn" onclick="toggleMenu()">&times;</span>
+        <div class="nav-links" id="navLinks">
             <a href="/">หน้าแรก</a>
-            <a href="#results" onclick="toggleMenu()">ผลการตรวจจับ</a>
+            <a href="#results">ผลการตรวจจับ</a>
             <a href="https://github.com/kaknoob/skin-for-website" target="_blank">GitHub</a>
         </div>
     </div>
@@ -211,8 +207,9 @@
     </div>
 
     <script>
+        // Toggle menu for mobile
         function toggleMenu() {
-            document.getElementById('navOverlay').classList.toggle('active');
+            document.getElementById('navLinks').classList.toggle('active');
         }
 
         // ====== Backend Status Check ======
