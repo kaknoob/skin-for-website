@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 model = None
 class_names = []
 
+# ---------------- Advice Dictionary ----------------
+disease_advice = {
+    "Melanoma": "Melanoma เป็นมะเร็งผิวหนังที่รุนแรง ควรพบแพทย์เฉพาะทางทันทีเพื่อการวินิจฉัยและรักษา",
+    "Nevus": "Nevus หรือไฝ หากไม่มีการเปลี่ยนแปลงผิดปกติสามารถปลอดภัยได้ แต่ถ้ามีการโต สีเปลี่ยน หรือขอบไม่ชัด ควรปรึกษาแพทย์",
+    "Seborrheic Keratosis": "Seborrheic Keratosis มักเป็นตุ่มเนื้อที่ไม่เป็นอันตราย แต่ถ้ารบกวนด้านความงามสามารถรักษาได้โดยแพทย์ผิวหนัง"
+}
+
+# ---------------- Helper Functions ----------------
 def extract_file_id_from_url(url):
     patterns = [
         r'/file/d/([a-zA-Z0-9-_]+)',
@@ -179,10 +187,12 @@ def process_image(image_data):
                     confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
                     if confidence > confidence_threshold:
                         class_name = class_names.get(class_id, f"Class_{class_id}")
+                        advice = disease_advice.get(class_name, "ยังไม่มีคำแนะนำสำหรับโรคนี้")
                         detections.append({
                             'class': class_name,
                             'confidence': float(confidence),
-                            'bbox': [int(x1), int(y1), int(x2), int(y2)]
+                            'bbox': [int(x1), int(y1), int(x2), int(y2)],
+                            'advice': advice
                         })
                         cv2.rectangle(annotated_image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                         label = f"{class_name}: {confidence:.2f}"
@@ -203,10 +213,9 @@ def process_image(image_data):
         return {'success': False, 'error': str(e)}
 
 # ---------------- Flask Routes ----------------
-
 @app.route('/')
 def index():
-    return render_template('index.html')  # ต้องมีไฟล์ templates/index.html
+    return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -240,7 +249,6 @@ def force_download_model():
         return jsonify({'success': False, 'error': 'Failed to download model'})
 
 # ---------------- Run App ----------------
-
 if __name__ == '__main__':
     logger.info("Starting Flask app...")
     if load_model():
