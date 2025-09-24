@@ -326,11 +326,14 @@
 
             let infoHtml = `<h4>🎯 พบ ${result.total_detections} จุดที่ตรวจพบ</h4>`;
             result.detections.forEach((detection) => {
-                infoHtml += `
-                    <div class="detection-item">
-                        <strong>${detection.class}</strong> 
-                        (ความแม่นยำ: ${(detection.confidence * 100).toFixed(1)}%)
-                    </div>`;
+               infoHtml += `
+                <div class="detection-item">
+                    <strong>${detection.class}</strong> 
+                    (ความแม่นยำ: ${(detection.confidence * 100).toFixed(1)}%)<br>
+                    📌 คำแนะนำ: ${detection.advice || "ไม่มีคำแนะนำ"}<br>
+                    ${detection.more_info ? `<a href="${detection.more_info}" target="_blank" class="read-more">📖 อ่านเพิ่มเติม</a>` : ""}
+                </div>`;
+
             });
 
             document.getElementById('detectionInfo').innerHTML = infoHtml;
